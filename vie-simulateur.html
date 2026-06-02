@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vie Simulée — Monde Ouvert</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#0a0e14;font-family:'Segoe UI',system-ui,sans-serif;color:#e8ecf1}
+#wrap{display:flex;flex-direction:column;height:100%}
+#topbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:linear-gradient(180deg,#1a2332,#121820);border-bottom:1px solid #2a3a50;flex-wrap:wrap;z-index:10}
+#topbar h1{font-size:14px;font-weight:600;color:#7eb8ff;margin-right:8px}
+.tb-btn{padding:5px 10px;border:1px solid #3a5068;background:#1e2d40;color:#cde;border-radius:6px;cursor:pointer;font-size:12px}
+.tb-btn:hover{background:#2a4060}
+.tb-btn.active{background:#2d5a8a;border-color:#5a9fd4}
+#gameArea{flex:1;position:relative;overflow:hidden}
+#cvs{display:block;width:100%;height:100%;image-rendering:pixelated;cursor:crosshair}
+#hud{position:absolute;top:8px;left:8px;width:280px;pointer-events:none}
+#hud .panel{pointer-events:auto;background:rgba(12,18,28,.92);border:1px solid #2a4058;border-radius:10px;padding:10px;margin-bottom:6px;font-size:11px;backdrop-filter:blur(6px)}
+#hud h3{font-size:11px;color:#7eb8ff;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.stat-row{display:flex;justify-content:space-between;margin:2px 0}
+.bar-wrap{height:6px;background:#1a2535;border-radius:3px;margin:3px 0;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .2s}
+#minimap{position:absolute;top:8px;right:8px;width:160px;height:160px;border:2px solid #3a5068;border-radius:8px;background:rgba(8,12,20,.9);pointer-events:none}
+#minimap canvas{width:100%;height:100%;border-radius:6px}
+#toast{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(20,40,60,.95);border:1px solid #4a8;padding:8px 16px;border-radius:8px;font-size:12px;display:none;z-index:20}
+#controls-hint{position:absolute;bottom:8px;left:8px;font-size:10px;color:#6a8aa0;pointer-events:none}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.show{display:flex}
+.modal{background:#141c28;border:1px solid #3a5068;border-radius:12px;max-width:92vw;max-height:88vh;overflow:auto;padding:16px;min-width:320px}
+.modal h2{color:#7eb8ff;font-size:16px;margin-bottom:12px}
+.modal .close{float:right;cursor:pointer;color:#8af;font-size:18px}
+.modal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.card{background:#1a2535;border:1px solid #2a4058;border-radius:8px;padding:10px;cursor:pointer;font-size:11px}
+.card:hover{border-color:#5a9fd4;background:#223045}
+.card.disabled{opacity:.4;pointer-events:none}
+.tabs{display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap}
+.tab{padding:6px 12px;border-radius:6px;cursor:pointer;background:#1a2535;border:1px solid #2a4058;font-size:11px}
+.tab.active{background:#2d5a8a}
+.log{font-size:10px;max-height:120px;overflow-y:auto;color:#9ab;margin-top:8px}
+input,select{width:100%;padding:6px;margin:4px 0;background:#0e1520;border:1px solid #3a5068;color:#e8ecf1;border-radius:4px;font-size:12px}
+label{font-size:11px;color:#8ab}
+.btn-primary{margin-top:8px;padding:8px 16px;background:#2d6a4a;border:none;color:#fff;border-radius:6px;cursor:pointer;width:100%}
+.btn-primary:hover{background:#3d8a5a}
+#quest-panel{position:absolute;right:8px;bottom:8px;width:220px;background:rgba(12,18,28,.92);border:1px solid #2a4058;border-radius:10px;padding:8px;font-size:10px;max-height:140px;overflow-y:auto}
+#quest-panel h3{font-size:10px;color:#f0c060;margin-bottom:4px}
+.quest-item{margin:2px 0;color:#abc}
+</style>
+</head>
+<body>
+<div id="wrap">
+<div id="topbar">
+<h1>🌍 Vie Simulée</h1>
+<button class="tb-btn" data-modal="character">Personnage</button>
+<button class="tb-btn" data-modal="job">Emploi</button>
+<button class="tb-btn" data-modal="economy">Économie</button>
+<button class="tb-btn" data-modal="inventory">Inventaire</button>
+<button class="tb-btn" data-modal="property">Immobilier</button>
+<button class="tb-btn" data-modal="vehicles">Véhicules</button>
+<button class="tb-btn" data-modal="social">Social</button>
+<button class="tb-btn" data-modal="craft">Artisanat</button>
+<button class="tb-btn" data-modal="quests">Quêtes</button>
+<button class="tb-btn" data-modal="justice">Justice</button>
+<button class="tb-btn" data-modal="health">Santé</button>
+<button class="tb-btn" data-modal="map">Carte</button>
+<button class="tb-btn" id="btnSave">💾 Sauver</button>
+<button class="tb-btn" id="btnNew">Nouvelle vie</button>
+</div>
+<div id="gameArea">
+<canvas id="cvs"></canvas>
+<div id="hud"></div>
+<canvas id="minimap" width="160" height="160"></canvas>
+<div id="toast"></div>
+<div id="controls-hint">ZQSD/Flèches — Déplacer · E — Interagir · M — Carte · Espace — Pause · 1-5 — Actions rapides</div>
+<div id="quest-panel"><h3>Quêtes actives</h3><div id="quest-list"></div></div>
+</div>
+</div>
+
+<div id="modal-character" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Personnage</h2><div id="char-content"></div></div></div>
+<div id="modal-job" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Emploi & Carrière</h2><div id="job-content"></div></div></div>
+<div id="modal-economy" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Économie &amp; Banque</h2><div id="economy-content"></div></div></div>
+<div id="modal-inventory" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Inventaire</h2><div id="inv-content"></div></div></div>
+<div id="modal-property" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Immobilier</h2><div id="prop-content"></div></div></div>
+<div id="modal-vehicles" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Véhicules</h2><div id="veh-content"></div></div></div>
+<div id="modal-social" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Relations & Famille</h2><div id="social-content"></div></div></div>
+<div id="modal-craft" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Artisanat & Activités</h2><div id="craft-content"></div></div></div>
+<div id="modal-quests" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Quêtes</h2><div id="quests-content"></div></div></div>
+<div id="modal-justice" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Justice &amp; Police</h2><div id="justice-content"></div></div></div>
+<div id="modal-health" class="modal-overlay"><div class="modal"><span class="close">&times;</span><h2>Santé &amp; Médical</h2><div id="health-content"></div></div></div>
+<div id="modal-map" class="modal-overlay"><div class="modal" style="min-width:500px"><span class="close">&times;</span><h2>Carte du monde</h2><canvas id="bigMap" width="500" height="500"></canvas><p style="font-size:11px;margin-top:8px;color:#8ab">Points jaunes = villes · Vert = votre position</p></div></div>
+
+<script>
+(function(){
+'use strict';
+
+const TILE=16, CHUNK=32, WORLD_W=512, WORLD_H=512;
+const SAVE_KEY='vie_simulee_save_v3';
+const HOUR_REAL_MS=800;
+const NAMES_M=['Alex','Jordan','Lucas','Noah','Hugo','Léo','Gabriel','Raphaël','Louis','Arthur','Ethan','Mason','Adam','Nathan','Tom'];
+const NAMES_F=['Emma','Léa','Chloé','Manon','Camille','Julie','Sarah','Inès','Zoé','Lina','Alice','Rose','Jade','Anna','Eva'];
+const LAST=['Martin','Bernard','Dubois','Thomas','Robert','Richard','Petit','Durand','Leroy','Moreau','Simon','Laurent','Lefebvre','Michel','Garcia'];
+
+const BIOMES={
+0:{n:'Océan',c:'#1a4a7a',walk:0},
+1:{n:'Plage',c:'#c4a86a',walk:1},
+2:{n:'Forêt',c:'#1a5a2a',walk:1},
+3:{n:'Prairie',c:'#4a8a3a',walk:1},
+4:{n:'Route',c:'#555560',walk:1},
+5:{n:'Autoroute',c:'#404048',walk:1},
+6:{n:'Rivière',c:'#3a7ab8',walk:0},
+7:{n:'Lac',c:'#2a6aa8',walk:0},
+8:{n:'Ferme',c:'#6a8a4a',walk:1},
+9:{n:'Village',c:'#7a8a6a',walk:1},
+10:{n:'Ville',c:'#6a7078',walk:1},
+11:{n:'Quartier rés.',c:'#8a9098',walk:1},
+12:{n:'Quartier aff.',c:'#5a6068',walk:1},
+13:{n:'Industrie',c:'#4a5058',walk:1},
+14:{n:'Aéroport',c:'#888890',walk:1},
+15:{n:'Port',c:'#5a6a7a',walk:1},
+16:{n:'Base militaire',c:'#4a5a40',walk:1},
+17:{n:'Montagne',c:'#6a6a70',walk:1},
+18:{n:'Neige',c:'#d0d8e0',walk:1}
+};
+
+const BUILDINGS={
+hospital:{n:'Hôpital',icon:'🏥',color:'#e8f0ff'},
+school:{n:'École',icon:'🏫',color:'#ffe8a0'},
+university:{n:'Université',icon:'🎓',color:'#d0c0ff'},
+police:{n:'Commissariat',icon:'👮',color:'#a0c0ff'},
+court:{n:'Tribunal',icon:'⚖️',color:'#c0b0a0'},
+fire:{n:'Caserne',icon:'🚒',color:'#ff9090'},
+military:{n:'Base militaire',icon:'🎖️',color:'#6a7a50'},
+mall:{n:'Centre commercial',icon:'🛒',color:'#ffd0a0'},
+restaurant:{n:'Restaurant',icon:'🍽️',color:'#ffb0a0'},
+hotel:{n:'Hôtel',icon:'🏨',color:'#c0d0ff'},
+bank:{n:'Banque',icon:'🏦',color:'#90d090'},
+stadium:{n:'Stade',icon:'🏟️',color:'#a0ffa0'},
+factory:{n:'Usine',icon:'🏭',color:'#909090'},
+power:{n:'Centrale',icon:'⚡',color:'#ffff90'},
+station:{n:'Gare',icon:'🚉',color:'#c0c0d0'},
+airport:{n:'Aéroport',icon:'✈️',color:'#d0d0e0'},
+port:{n:'Port',icon:'⚓',color:'#80a0c0'},
+farm_b:{n:'Ferme',icon:'🌾',color:'#a0c060'},
+shop:{n:'Commerce',icon:'🏪',color:'#ffa0c0'},
+house:{n:'Maison',icon:'🏠',color:'#e0c0a0'},
+apartment:{n:'Immeuble',icon:'🏢',color:'#b0b0c0'},
+church:{n:'Église',icon:'⛪',color:'#e0e0f0'},
+park:{n:'Parc',icon:'🌳',color:'#60a060'},
+mine:{n:'Mine',icon:'⛏️',color:'#505050'},
+pharmacy:{n:'Pharmacie',icon:'💊',color:'#90ffb0'},
+garage:{n:'Garage',icon:'🔧',color:'#a0a0b0'},
+cityhall:{n:'Mairie',icon:'🏛️',color:'#d0c080'}
+};
+
+const JOBS=[
+{id:'unemployed',n:'Sans emploi',sal:0,hours:[0,0],req:{},cat:'none'},
+{id:'doctor',n:'Médecin',sal:8500,hours:[8,18],req:{int:70,edu:'med'},cat:'health',skills:['diagnostic','surgery']},
+{id:'nurse',n:'Infirmier',sal:4200,hours:[7,19],req:{int:50,edu:'nurse'},cat:'health'},
+{id:'surgeon',n:'Chirurgien',sal:12000,hours:[7,17],req:{int:85,edu:'med',str:40},cat:'health'},
+{id:'pharmacist',n:'Pharmacien',sal:5500,hours:[9,19],req:{int:65,edu:'pharm'},cat:'health'},
+{id:'police',n:'Policier',sal:3800,hours:[6,22],req:{str:55,int:45},cat:'law'},
+{id:'detective',n:'Détective',sal:5200,hours:[9,21],req:{int:70,str:50},cat:'law'},
+{id:'firefighter',n:'Pompier',sal:3600,hours:[8,20],req:{str:65},cat:'emergency'},
+{id:'soldier',n:'Militaire',sal:3200,hours:[6,18],req:{str:70},cat:'military'},
+{id:'judge',n:'Juge',sal:9500,hours:[9,17],req:{int:80,edu:'law'},cat:'law'},
+{id:'lawyer',n:'Avocat',sal:7200,hours:[9,19],req:{int:75,edu:'law'},cat:'law'},
+{id:'prosecutor',n:'Procureur',sal:8000,hours:[9,18],req:{int:78,edu:'law'},cat:'law'},
+{id:'teacher',n:'Enseignant',sal:3200,hours:[8,16],req:{int:55,edu:'teach'},cat:'edu'},
+{id:'professor',n:'Professeur',sal:5800,hours:[9,17],req:{int:75,edu:'uni'},cat:'edu'},
+{id:'researcher',n:'Chercheur',sal:6500,hours:[9,18],req:{int:80,edu:'uni'},cat:'science'},
+{id:'farmer',n:'Agriculteur',sal:2800,hours:[5,18],req:{str:40},cat:'agri'},
+{id:'fisher',n:'Pêcheur',sal:2500,hours:[4,14],req:{str:35},cat:'agri'},
+{id:'miner',n:'Mineur',sal:3400,hours:[6,16],req:{str:60},cat:'industry'},
+{id:'mechanic',n:'Mécanicien',sal:3100,hours:[8,18],req:{str:50,int:40},cat:'service'},
+{id:'plumber',n:'Plombier',sal:3500,hours:[7,17],req:{str:45},cat:'service'},
+{id:'electrician',n:'Électricien',sal:3600,hours:[7,17],req:{str:45,int:45},cat:'service'},
+{id:'taxi',n:'Chauffeur taxi',sal:2800,hours:[6,2],req:{},cat:'transport'},
+{id:'bus_driver',n:'Chauffeur bus',sal:2900,hours:[5,21],req:{},cat:'transport'},
+{id:'trucker',n:'Routier',sal:3800,hours:[4,20],req:{str:40},cat:'transport'},
+{id:'pilot',n:'Pilote',sal:9500,hours:[6,22],req:{int:70},cat:'transport'},
+{id:'journalist',n:'Journaliste',sal:3400,hours:[9,20],req:{int:60,cha:50},cat:'media'},
+{id:'developer',n:'Développeur',sal:6200,hours:[9,18],req:{int:75},cat:'tech'},
+{id:'engineer',n:'Ingénieur',sal:6800,hours:[8,17],req:{int:72,edu:'eng'},cat:'tech'},
+{id:'architect',n:'Architecte',sal:6000,hours:[9,18],req:{int:68,cha:45},cat:'tech'},
+{id:'banker',n:'Banquier',sal:5500,hours:[9,17],req:{int:65,cha:55},cat:'finance'},
+{id:'merchant',n:'Commerçant',sal:3200,hours:[8,20],req:{cha:50},cat:'commerce'},
+{id:'chef',n:'Cuisinier',sal:3000,hours:[10,22],req:{},cat:'food'},
+{id:'baker',n:'Boulanger',sal:2700,hours:[4,14],req:{},cat:'food'},
+{id:'waiter',n:'Serveur',sal:2200,hours:[11,23],req:{cha:40},cat:'food'},
+{id:'entrepreneur',n:'Entrepreneur',sal:0,hours:[8,22],req:{cha:60,int:55},cat:'business'},
+{id:'mayor',n:'Maire',sal:7500,hours:[8,18],req:{cha:70,int:65},cat:'gov'},
+{id:'realtor',n:'Agent immobilier',sal:4500,hours:[9,19],req:{cha:65},cat:'finance'},
+{id:'accountant',n:'Comptable',sal:4800,hours:[9,17],req:{int:65},cat:'finance'},
+{id:'artist',n:'Artiste',sal:2600,hours:[10,20],req:{cha:55},cat:'arts'},
+{id:'musician',n:'Musicien',sal:2800,hours:[14,2],req:{cha:60},cat:'arts'},
+{id:'actor',n:'Acteur',sal:5000,hours:[10,22],req:{cha:75},cat:'arts'},
+{id:'nurse_aid',n:'Aide-soignant',sal:2400,hours:[7,19],req:{},cat:'health'},
+{id:'paramedic',n:'Ambulancier',sal:3400,hours:[8,20],req:{str:45},cat:'health'},
+{id:'security',n:'Agent sécurité',sal:2600,hours:[8,20],req:{str:50},cat:'service'},
+{id:'cleaner',n:'Agent d\'entretien',sal:2100,hours:[6,14],req:{},cat:'service'},
+{id:'construction',n:'Ouvrier BTP',sal:3300,hours:[7,17],req:{str:55},cat:'industry'},
+{id:'scientist',n:'Scientifique',sal:7200,hours:[9,18],req:{int:82,edu:'uni'},cat:'science'},
+{id:'veterinarian',n:'Vétérinaire',sal:5200,hours:[9,18],req:{int:65},cat:'health'},
+{id:'psychologist',n:'Psychologue',sal:4800,hours:[9,18],req:{int:70,cha:50},cat:'health'},
+{id:'social_worker',n:'Travailleur social',sal:3200,hours:[8,17],req:{cha:55,int:50},cat:'gov'},
+{id:'librarian',n:'Bibliothécaire',sal:2600,hours:[9,17],req:{int:50},cat:'edu'},
+{id:'postman',n:'Facteur',sal:2500,hours:[7,15],req:{},cat:'service'},
+{id:'barista',n:'Barista',sal:2300,hours:[6,18],req:{cha:35},cat:'food'},
+{id:'hairdresser',n:'Coiffeur',sal:2800,hours:[9,19],req:{cha:45},cat:'service'},
+{id:'fashion',n:'Styliste',sal:3500,hours:[10,19],req:{cha:60},cat:'arts'},
+{id:'pilot_cargo',n:'Pilote cargo',sal:7800,hours:[5,20],req:{int:65,str:40},cat:'transport'},
+{id:'sailor',n:'Marin',sal:4000,hours:[6,18],req:{str:45},cat:'transport'},
+{id:'stockbroker',n:'Courtier',sal:9000,hours:[9,17],req:{int:75,cha:60},cat:'finance'},
+{id:'insurance',n:'Assureur',sal:4200,hours:[9,17],req:{int:55,cha:50},cat:'finance'},
+{id:'chef_exec',n:'Chef d\'entreprise',sal:15000,hours:[7,21],req:{cha:70,int:70},cat:'business'}
+];
+
+const EDU_LEVELS=['none','primary','secondary','highschool','bachelor','master','phd','med','law','eng','nurse','pharm','teach','uni'];
+const EDU_NAMES={none:'Aucun',primary:'Primaire',secondary:'Collège',highschool:'Lycée',bachelor:'Licence',master:'Master',phd:'Doctorat',med:'Médecine',law:'Droit',eng:'Ingénierie',nurse:'Soins infirmiers',pharm:'Pharmacie',teach:'Éducation',uni:'Université'};
+const VEHICLES=[
+{id:'walk',n:'À pied',speed:1,cost:0},
+{id:'bike',n:'Vélo',speed:1.4,cost:200},
+{id:'moto',n:'Moto',speed:2.2,cost:5000},
+{id:'car',n:'Voiture',speed:2.8,cost:18000},
+{id:'truck',n:'Camion',speed:2,cost:35000},
+{id:'bus',n:'Bus',speed:1.8,cost:120000},
+{id:'boat',n:'Bateau',speed:2.5,cost:45000,water:1},
+{id:'plane',n:'Avion',speed:5,cost:500000,air:1}
+];
+
+const ITEMS={
+bread:{n:'Pain',price:3,hunger:15},
+water:{n:'Eau',price:2,thirst:25},
+meal:{n:'Repas',price:12,hunger:40,thirst:10},
+medicine:{n:'Médicament',price:25,health:20},
+bandage:{n:'Bandage',price:8,health:10},
+fish:{n:'Poisson',price:8,hunger:20},
+crop:{n:'Récolte',price:5,hunger:12},
+ore:{n:'Minerai',price:15},
+wood:{n:'Bois',price:6},
+tool:{n:'Outil',price:50},
+seed:{n:'Graines',price:4},
+fertilizer:{n:'Engrais',price:10}
+};
+
+const CRAFT=[
+{id:'cook',n:'Cuisiner repas',in:{crop:2},out:{meal:1},skill:'cooking'},
+{id:'fish',n:'Pêcher',time:3,out:{fish:1},skill:'fishing'},
+{id:'farm',n:'Cultiver',in:{seed:1},out:{crop:2},time:5,skill:'farming'},
+{id:'mine',n:'Miner',time:4,out:{ore:1},skill:'mining'},
+{id:'wood',n:'Couper bois',time:3,out:{wood:2},skill:'woodcutting'}
+];
+
+const DISEASES=[
+{id:'flu',n:'Grippe',dmg:.02,cure:'medicine'},
+{id:'cold',n:'Rhume',dmg:.01,cure:'medicine'},
+{id:'food_poison',n:'Intoxication',dmg:.03,cure:'medicine'},
+{id:'injury',n:'Blessure',dmg:.04,cure:'bandage'},
+{id:'burn',n:'Brûlure',dmg:.03,cure:'bandage'},
+{id:'stress_dis',n:'Épuisement',dmg:.01,cure:'rest'}
+];
+
+const CRIMES=[
+{id:'theft',n:'Vol',fine:500,jail:2},
+{id:'assault',n:'Agression',fine:1000,jail:5},
+{id:'fraud',n:'Fraude',fine:5000,jail:10},
+{id:'speeding',n:'Excès vitesse',fine:150,jail:0}
+];
+
+let worldTiles, worldBuildings, worldPOIs, animals=[];
+let game, player, npcs, camera, ambulances=[];
+let keys={}, paused=false, modalOpen=false;
+let canvas, ctx, mmCtx, bigMapCtx;
+let lastTime=0, accumHour=0;
+
+function rnd(n){return Math.floor(Math.random()*n)}
+function rndf(a,b){return a+Math.random()*(b-a)}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function pick(arr){return arr[rnd(arr.length)]}
+function toast(msg,d=2500){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='block';
+  clearTimeout(t._tm);t._tm=setTimeout(()=>t.style.display='none',d);
+}
+
+function noise2D(x,y,seed){
+  const n=Math.sin(x*12.9898+y*78.233+seed)*43758.5453;
+  return n-Math.floor(n);
+}
+
+function genWorld(){
+  worldTiles=new Uint8Array(WORLD_W*WORLD_H);
+  worldBuildings=[];
+  worldPOIs=[];
+  const seed=Date.now()%100000;
+  for(let y=0;y<WORLD_H;y++){
+    for(let x=0;x<WORLD_W;x++){
+      const i=y*WORLD_W+x;
+      const nx=x/WORLD_W, ny=y/WORLD_H;
+      const elev=noise2D(x*.02,y*.02,seed)+noise2D(x*.05,y*.05,seed+1)*.5;
+      const moist=noise2D(x*.03+100,y*.03,seed+2);
+      const urban=noise2D(x*.008,y*.008,seed+3);
+      let t=3;
+      if(nx<.08||nx>.92||ny<.06||ny>.94) t=0;
+      else if(elev<.35&&moist>.5) t=6;
+      else if(elev<.4) t=7;
+      else if(elev>.85) t=17;
+      else if(moist>.65) t=2;
+      else if(urban>.72) t=10;
+      else if(urban>.6) t=12;
+      else if(urban>.52) t=11;
+      else if(urban>.45) t=9;
+      else if(moist<.3&&elev>.5) t=8;
+      if((x+y)%47===0&&(t===3||t===9||t===10)) t=4;
+      if((x*3+y*7)%89===0&&t===4) t=5;
+      if(nx>.85&&ny>.7&&ny<.9&&nx<.95) t=15;
+      if(nx>.75&&nx<.88&&ny>.15&&ny<.3) t=14;
+      worldTiles[i]=t;
+    }
+  }
+  placeCities();
+  placeBuildings();
+  spawnAnimals();
+}
+
+function spawnAnimals(){
+  animals=[];
+  for(let i=0;i<80;i++){
+    animals.push({
+      x:rnd(WORLD_W)*TILE,y:rnd(WORLD_H)*TILE,
+      type:pick(['cow','sheep','chicken','deer','fish']),
+      vx:0,vy:0
+    });
+  }
+}
+
+function placeCities(){
+  const cities=[
+    {x:256,y:200,name:'Métropolis',size:40},
+    {x:120,y:280,name:'Riviera',size:25},
+    {x:380,y:320,name:'Nordhaven',size:28},
+    {x:200,y:120,name:'Valmont',size:22},
+    {x:400,y:150,name:'Côte Azur',size:20}
+  ];
+  cities.forEach(c=>{
+    worldPOIs.push({type:'city',name:c.name,x:c.x*TILE,y:c.y*TILE});
+    for(let dy=-c.size;dy<=c.size;dy++)
+      for(let dx=-c.size;dx<=c.size;dx++){
+        const tx=c.x+dx,ty=c.y+dy;
+        if(tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H) continue;
+        const d=Math.hypot(dx,dy);
+        if(d>c.size) continue;
+        const i=ty*WORLD_W+tx;
+        if(d<c.size*.3) worldTiles[i]=12;
+        else if(d<c.size*.6) worldTiles[i]=10;
+        else worldTiles[i]=11;
+        if(d<c.size*.15&&Math.abs(dx%7)<2&&Math.abs(dy%5)<2) worldTiles[i]=4;
+      }
+  });
+}
+
+function placeBuildings(){
+  const types=Object.keys(BUILDINGS);
+  const cityCenters=worldPOIs.filter(p=>p.type==='city');
+  const placements=[
+    {t:'hospital',count:8},{t:'school',count:12},{t:'university',count:4},
+    {t:'police',count:10},{t:'court',count:3},{t:'fire',count:8},
+    {t:'military',count:2},{t:'mall',count:6},{t:'restaurant',count:25},
+    {t:'hotel',count:10},{t:'bank',count:12},{t:'stadium',count:4},
+    {t:'factory',count:15},{t:'power',count:5},{t:'station',count:8},
+    {t:'airport',count:2},{t:'port',count:4},{t:'farm_b',count:30},
+    {t:'shop',count:40},{t:'house',count:80},{t:'apartment',count:50},
+    {t:'church',count:6},{t:'park',count:15},{t:'mine',count:6},
+    {t:'pharmacy',count:12},{t:'garage',count:10},{t:'cityhall',count:5}
+  ];
+  placements.forEach(p=>{
+    for(let n=0;n<p.count;n++){
+      let tx,ty,tile,attempts=0;
+      do{
+        if(p.t==='airport'||p.t==='port'){
+          const apt=worldPOIs.find(x=>x.type==='city')||{x:256*TILE,y:200*TILE};
+          tx=Math.floor(apt.x/TILE)+rnd(60)-30;
+          ty=Math.floor(apt.y/TILE)+rnd(60)-30;
+        } else if(p.t==='farm_b'||p.t==='mine'){
+          tx=rnd(WORLD_W);ty=rnd(WORLD_H);
+        } else {
+          const c=pick(cityCenters);
+          tx=Math.floor(c.x/TILE)+rnd(50)-25;
+          ty=Math.floor(c.y/TILE)+rnd(50)-25;
+        }
+        if(tx<2||ty<2||tx>=WORLD_W-2||ty>=WORLD_H-2){attempts++;continue;}
+        tile=worldTiles[ty*WORLD_W+tx];
+        attempts++;
+      }while(attempts<50&&![3,8,9,10,11,12,13,14,15].includes(tile));
+      if(attempts>=50) continue;
+      worldBuildings.push({type:p.t,x:tx,y:ty,w:2+rnd(3),h:2+rnd(2)});
+    }
+  });
+}
+
+function tileAt(tx,ty){
+  if(tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H) return 0;
+  return worldTiles[ty*WORLD_W+tx];
+}
+
+function walkable(tx,ty){
+  const t=tileAt(tx,ty);
+  return BIOMES[t]&&BIOMES[t].walk;
+}
+
+function getBuildingAt(wx,wy){
+  const tx=Math.floor(wx/TILE),ty=Math.floor(wy/TILE);
+  return worldBuildings.find(b=>tx>=b.x&&tx<b.x+b.w&&ty>=b.y&&ty<b.y+b.h);
+}
+
+function createPlayer(newLife){
+  const isNew=newLife||!loadGame();
+  const gender=rnd(2)?'M':'F';
+  const first=gender==='M'?pick(NAMES_M):pick(NAMES_F);
+  const name=first+' '+pick(LAST);
+  player={
+    x:256*TILE+TILE,y:200*TILE+TILE,
+    vx:0,vy:0,
+    name,gender,
+    age:0,ageDays:0,
+    height:50+ rnd(15),
+    weight:3.5,
+    energy:100,hunger:80,thirst:80,sleep:100,
+    stress:10,happiness:80,health:100,hygiene:90,
+    reputation:50,intelligence:50+ rnd(20),strength:40+ rnd(20),charisma:45+ rnd(20),
+    cash:500,bank:0,
+    jobId:'unemployed',jobLevel:0,jobXP:0,jobMissions:[],
+    edu:'none',degrees:[],
+    skills:{cooking:0,fishing:0,farming:0,mining:0,woodcutting:0,driving:0},
+    profSkills:{},
+    relations:[],
+    spouse:null,children:[],
+    inventory:{bread:2,water:2},
+    properties:[],vehicles:['walk'],currentVehicle:'walk',
+    company:null,investments:[],stocks:{},
+    diseases:[],criminalRecord:[],jailDays:0,
+    quests:[],completedQuests:[],
+    retired:false,pregnant:false,
+    lifeStage:'baby',
+    taxDebt:0,loan:0,loanRate:.05,
+    lastWorkDay:-1,workedToday:false,
+    inTrial:false,trialDays:0,
+    achievements:[],
+    pension:0,exploredBuildings:new Set()
+  };
+  if(!isNew) return;
+  addQuest('birth','Commencer la vie','Explorez le monde et grandissez.');
+  npcs=genNPCs(120);
+  game={day:1,hour:8,minute:0,season:0,weather:'clear',weatherTimer:0,
+    inflation:1,economyIndex:100,electionDay:365,electedMayor:'NPC',
+    stockMarket:{TECH:100,HEALTH:100,ENERGY:100,BANK:100},events:[],
+    timeScale:1};
+  toast('Bienvenue '+name+'! Vous êtes né. Utilisez ZQSD pour explorer.');
+}
+
+function genNPCs(n){
+  const list=[];
+  for(let i=0;i<n;i++){
+    const gender=rnd(2)?'M':'F';
+    const job=pick(JOBS.filter(j=>j.id!=='unemployed'&&j.id!=='entrepreneur'&&j.id!=='mayor'));
+    list.push({
+      id:'npc_'+i,
+      name:(gender==='M'?pick(NAMES_M):pick(NAMES_F))+' '+pick(LAST),
+      gender,age:18+rnd(50),
+      x:rnd(WORLD_W)*TILE,y:rnd(WORLD_H)*TILE,
+      jobId:job.id,cash:rnd(5000),
+      state:pick(['idle','work','travel','shop','home']),
+      target:null,partner:null,
+      happiness:rnd(40)+40,health:70+rnd(30),
+      homeX:rnd(WORLD_W)*TILE,homeY:rnd(WORLD_H)*TILE,
+      timer:rnd(100)
+    });
+  }
+  return list;
+}
+
+function addQuest(id,title,desc){
+  if(player.quests.find(q=>q.id===id)) return;
+  player.quests.push({id,title,desc,progress:0,target:1,done:false});
+  refreshQuestUI();
+}
+
+function completeQuest(id){
+  const q=player.quests.find(x=>x.id===id);
+  if(!q||q.done) return;
+  q.done=true;
+  player.cash+=100+rnd(200);
+  player.happiness=clamp(player.happiness+10,0,100);
+  player.completedQuests.push(id);
+  toast('Quête terminée: '+q.title);
+  refreshQuestUI();
+}
+
+function lifeStageFromAge(age){
+  if(age<3) return 'baby';
+  if(age<13) return 'child';
+  if(age<18) return 'teen';
+  if(age<65) return 'adult';
+  return 'senior';
+}
+
+function updateLifeStage(){
+  const s=lifeStageFromAge(player.age);
+  if(s!==player.lifeStage){
+    player.lifeStage=s;
+    toast('Nouvelle étape de vie: '+({baby:'Bébé',child:'Enfant',teen:'Adolescent',adult:'Adulte',senior:'Senior'})[s]);
+    if(s==='child') addQuest('school','Aller à l\'école','Trouvez une école sur la carte.');
+    if(s==='teen') addQuest('highschool','Lycée','Continuez vos études au lycée.');
+    if(s==='adult') addQuest('job','Trouver un emploi','Cherchez un travail dans le menu Emploi.');
+  }
+}
+
+function getJob(id){return JOBS.find(j=>j.id===id)||JOBS[0]}
+
+function canTakeJob(job){
+  if(player.age<16) return 'Trop jeune (16 ans min)';
+  if(player.edu==='none'&&job.req.edu) return 'Formation requise';
+  if(job.req.int&&player.intelligence<job.req.int) return 'Intelligence insuffisante';
+  if(job.req.str&&player.strength<job.req.str) return 'Force insuffisante';
+  if(job.req.cha&&player.charisma<job.req.cha) return 'Charisme insuffisant';
+  if(job.req.edu){
+    const order=['none','primary','secondary','highschool','bachelor','master','phd','med','law','eng','nurse','pharm','teach','uni'];
+    if(order.indexOf(player.edu)<order.indexOf(job.req.edu)) return 'Diplôme: '+EDU_NAMES[job.req.edu];
+  }
+  return null;
+}
+
+function workShift(){
+  const job=getJob(player.jobId);
+  if(job.id==='unemployed'||player.retired) return;
+  const h=game.hour;
+  if(h<job.hours[0]||h>=job.hours[1]){toast('Hors horaires de travail');return;}
+  if(player.workedToday){toast('Vous avez déjà travaillé aujourd\'hui');return;}
+  player.workedToday=true;
+  const bonus=1+player.jobLevel*.1;
+  const pay=Math.floor(job.sal/22*bonus*game.inflation);
+  player.bank+=pay;
+  player.jobXP+=10+player.jobLevel*2;
+  player.energy=clamp(player.energy-15,0,100);
+  player.stress=clamp(player.stress+5,0,100);
+  if(player.jobXP>=100*(player.jobLevel+1)){
+    player.jobLevel++;
+    player.jobXP=0;
+    toast('Promotion! Niveau '+player.jobLevel);
+  }
+  completeMissionProgress('work');
+  toast('Journée travaillée: +'+pay+'€ (banque)');
+}
+
+function completeMissionProgress(type){
+  player.jobMissions.forEach(m=>{
+    if(m.type===type&&!m.done){m.progress++;if(m.progress>=m.target)m.done=true;}
+  });
+}
+
+function assignJobMissions(){
+  const job=getJob(player.jobId);
+  if(job.id==='unemployed') return;
+  player.jobMissions=[
+    {type:'work',desc:'Travailler 5 jours',target:5,progress:0,done:false},
+    {type:'skill',desc:'Améliorer une compétence',target:1,progress:0,done:false}
+  ];
+}
+
+function updateNeeds(dt){
+  const rate=dt*.001;
+  player.hunger=clamp(player.hunger-rate*2.5,0,100);
+  player.thirst=clamp(player.thirst-rate*3,0,100);
+  player.energy=clamp(player.energy-rate*1.5,0,100);
+  player.hygiene=clamp(player.hygiene-rate*1.2,0,100);
+  if(player.hunger<20||player.thirst<20) player.health=clamp(player.health-rate*3,0,100);
+  if(player.sleep<30) player.stress=clamp(player.stress+rate*5,0,100);
+  if(player.hunger>60&&player.thirst>60&&player.health>70) player.happiness=clamp(player.happiness+rate,0,100);
+  else player.happiness=clamp(player.happiness-rate*2,0,100);
+  player.diseases.forEach(d=>{
+    const dis=DISEASES.find(x=>x.id===d);
+    if(dis) player.health=clamp(player.health-rate*dis.dmg*100,0,100);
+  });
+  if(player.health<=0){toast('GAME OVER - Santé épuisée');player.health=1;player.cash=Math.max(0,player.cash-500);}
+  if(player.jailDays>0){
+    player.jailDays-=rate*.1;
+    if(player.jailDays<=0){player.jailDays=0;toast('Libération de prison');}
+  }
+}
+
+function updateTime(dt){
+  accumHour+=dt;
+  if(accumHour<HOUR_REAL_MS/game.timeScale) return;
+  accumHour-=HOUR_REAL_MS/game.timeScale;
+  game.minute+=15;
+  if(game.minute>=60){game.minute=0;game.hour++;}
+  if(game.hour>=24){
+    game.hour=0;game.day++;
+    player.ageDays++;
+    player.workedToday=false;
+    if(player.ageDays>=365){player.ageDays=0;player.age++;updateLifeStage();}
+    if(player.loan>0){
+      const payment=player.loan*player.loanRate/12;
+      if(player.bank>=payment){player.bank-=payment;player.loan-=payment*.3;}
+      else player.taxDebt+=payment;
+    }
+    if(game.day%30===0){
+      const tax=Math.floor((player.bank+player.cash)*.02*game.inflation);
+      if(player.bank>=tax) player.bank-=tax;
+      else player.taxDebt+=tax;
+      toast('Impôts mensuels: -'+tax+'€');
+      payPension();
+    }
+    if(game.day%90===0){
+      game.season=(game.season+1)%4;
+      toast(['Printemps','Été','Automne','Hiver'][game.season]);
+    }
+    if(game.day%game.electionDay===0) runElection();
+    updateStockMarket();
+    if(rnd(100)<5) triggerRandomEvent();
+  }
+  updateWeather();
+  updateNPCs();
+  updateAnimals();
+  updateAmbulances();
+  if(player.health<25&&rnd(200)<1) callAmbulance();
+}
+
+function updateAnimals(){
+  animals.forEach(a=>{
+    a.x+=rnd(3)-1;a.y+=rnd(3)-1;
+    a.x=clamp(a.x,0,WORLD_W*TILE);a.y=clamp(a.y,0,WORLD_H*TILE);
+  });
+}
+
+function updateWeather(){
+  game.weatherTimer--;
+  if(game.weatherTimer<=0){
+    const r=rnd(100);
+    if(game.season===1&&r<20) game.weather='heat';
+    else if(r<15) game.weather='rain';
+    else if(r<20) game.weather='storm';
+    else if(r<25) game.weather='cloudy';
+    else game.weather='clear';
+    game.weatherTimer=20+rnd(40);
+  }
+}
+
+function runElection(){
+  const candidates=['Vous','Jean Dupont','Marie Curie','Paul Martin'];
+  const winner=pick(candidates);
+  game.electedMayor=winner;
+  toast('Élection: '+winner+' élu(e) maire!');
+  if(winner==='Vous'){player.reputation+=20;player.happiness+=15;}
+}
+
+function triggerRandomEvent(){
+  const events=[
+    ()=>{game.inflation+=.01;toast('Inflation en hausse');},
+    ()=>{game.economyIndex+=rnd(10)-5;toast('Fluctuation économique');},
+    ()=>{if(rnd(2)){player.diseases.push('flu');toast('Vous êtes malade (grippe)');}},
+    ()=>{if(player.jobId!=='unemployed'&&rnd(2)) toast('Accident de travail évité de justesse');},
+    ()=>{game.stockMarket.TECH+=rnd(20)-10;toast('Bourse volatile');}
+  ];
+  pick(events)();
+}
+
+function updateStockMarket(){
+  Object.keys(game.stockMarket).forEach(k=>{
+    game.stockMarket[k]=clamp(game.stockMarket[k]+rnd(6)-3,20,500);
+  });
+}
+
+function updateNPCs(){
+  npcs.forEach(n=>{
+    n.timer--;
+    if(n.timer>0) return;
+    n.timer=30+rnd(80);
+    const states=['idle','work','travel','shop','eat'];
+    n.state=pick(states);
+    if(n.state==='travel'){
+      n.targetX=rnd(WORLD_W)*TILE;
+      n.targetY=rnd(WORLD_H)*TILE;
+    }
+    if(n.state==='work'&&rnd(100)<3){
+      const other=pick(npcs.filter(x=>x!==n&&x.gender!==n.gender));
+      if(other&&!n.partner&&rnd(3)===0){n.partner=other.id;other.partner=n.id;}
+    }
+    if(rnd(200)<1){
+      const jobs=JOBS.filter(j=>j.id!=='unemployed');
+      n.jobId=pick(jobs).id;
+    }
+  });
+  npcs.forEach(n=>{
+    if(n.state==='travel'&&n.targetX){
+      const dx=n.targetX-n.x,dy=n.targetY-n.y;
+      const len=Math.hypot(dx,dy)||1;
+      n.x+=dx/len*2;n.y+=dy/len*2;
+      if(len<10){n.targetX=null;n.state='idle';}
+    } else {
+      n.x+=rnd(3)-1;n.y+=rnd(3)-1;
+    }
+    n.x=clamp(n.x,0,WORLD_W*TILE);
+    n.y=clamp(n.y,0,WORLD_H*TILE);
+  });
+}
+
+function getVehicle(){return VEHICLES.find(v=>v.id===player.currentVehicle)||VEHICLES[0]}
+
+function movePlayer(dt){
+  if(player.jailDays>0) return;
+  let spd=80*getVehicle().speed;
+  if(keys[' ']||paused) return;
+  let dx=0,dy=0;
+  if(keys['z']||keys['w']||keys['arrowup']) dy=-1;
+  if(keys['s']||keys['arrowdown']) dy=1;
+  if(keys['q']||keys['a']||keys['arrowleft']) dx=-1;
+  if(keys['d']||keys['arrowright']) dx=1;
+  if(!dx&&!dy) return;
+  const len=Math.hypot(dx,dy)||1;
+  dx=dx/len*spd*dt/1000; dy=dy/len*spd*dt/1000;
+  const nx=player.x+dx,ny=player.y+dy;
+  const tx=Math.floor(nx/TILE),ty=Math.floor(ny/TILE);
+  const veh=getVehicle();
+  if(veh.water&&tileAt(tx,ty)!==0&&tileAt(tx,ty)!==7) return;
+  if(veh.air) { player.x=nx;player.y=ny; }
+  else if(walkable(tx,ty)){player.x=nx;player.y=ny;}
+  player.energy=clamp(player.energy-.02*spd,0,100);
+  if(player.lifeStage==='baby'){player.x+=(rnd(20)-10)*.01;player.y+=(rnd(20)-10)*.01;}
+}
+
+function interact(){
+  const b=getBuildingAt(player.x,player.y);
+  if(b){
+    const info=BUILDINGS[b.type];
+    toast(info.icon+' '+info.n);
+    handleBuilding(b);
+    return;
+  }
+  const near=npcs.find(n=>dist(player,n)<40);
+  if(near){
+    socialInteract(near);
+    return;
+  }
+  toast('Rien à interagir ici');
+}
+
+function handleBuilding(b){
+  player.exploredBuildings.add(b.type);
+  if(player.exploredBuildings.size>=3) completeQuest('explore');
+  switch(b.type){
+    case 'school':
+      if(player.age>=6&&player.age<18){
+        if(player.edu==='none'||player.edu==='primary') player.edu='secondary';
+        player.intelligence=clamp(player.intelligence+2,0,100);
+        player.energy-=10;
+        completeQuest('school');
+        toast('Cours suivis - Intelligence +');
+      } else toast('Âge non adapté pour l\'école');
+      break;
+    case 'university':
+      if(player.age>=18){
+        player.edu='bachelor';
+        player.intelligence=clamp(player.intelligence+3,0,100);
+        completeQuest('highschool');
+        addQuest('degree','Obtenir un diplôme','Terminez vos études.');
+        if(player.intelligence>=60) grantDegree('bachelor');
+        if(player.intelligence>=75) grantDegree('master');
+        if(player.intelligence>=90) grantDegree('phd');
+        toast('Cours universitaires');
+      }
+      break;
+    case 'hospital':
+      player.health=clamp(player.health+30,0,100);
+      player.diseases=[];
+      player.cash-=50;
+      toast('Soins hospitaliers (-50€)');
+      break;
+    case 'bank':
+      modalOpen=true;
+      document.getElementById('modal-economy').classList.add('show');
+      renderEconomy();
+      break;
+    case 'police':
+      if(player.criminalRecord.length) toast('Dossier judiciaire consulté');
+      else toast('Commissariat - Restez en règle');
+      break;
+    case 'court':
+      if(player.inTrial){player.inTrial=false;toast('Procès terminé');}
+      break;
+    case 'shop':
+    case 'mall':
+      buyItem('meal',1);
+      break;
+    case 'restaurant':
+      eatItem('meal');
+      break;
+    case 'pharmacy':
+      buyItem('medicine',1);
+      break;
+    case 'station':
+    case 'airport':
+    case 'port':
+      fastTravel(b.type);
+      break;
+    case 'cityhall':
+      if(player.reputation>60) toast('Mairie - Candidature possible aux élections');
+      break;
+    case 'farm_b':
+      doCraft('farm');
+      break;
+    case 'mine':
+      doCraft('mine');
+      break;
+    default:
+      if(['house','apartment','hotel'].includes(b.type)) rest(8);
+  }
+}
+
+function rest(hours){
+  player.sleep=clamp(player.sleep+hours*10,0,100);
+  player.energy=clamp(player.energy+hours*8,0,100);
+  game.hour=(game.hour+hours)%24;
+  toast('Repos de '+hours+'h');
+}
+
+function fastTravel(type){
+  const targets=worldPOIs.filter(p=>p.type==='city');
+  if(!targets.length) return;
+  const t=pick(targets);
+  player.x=t.x;player.y=t.y;
+  player.cash-=type==='airport'?200:type==='port'?80:30;
+  toast('Voyage rapide vers '+t.name);
+}
+
+function socialInteract(npc){
+  const rel=player.relations.find(r=>r.id===npc.id);
+  if(!rel){
+    player.relations.push({id:npc.id,name:npc.name,level:10,type:'acquaintance'});
+    toast('Rencontre: '+npc.name);
+  } else {
+    rel.level=clamp(rel.level+5,0,100);
+    if(rel.level>70&&player.age>=18&&!player.spouse&&rnd(3)===0){
+      if(confirm('Épouser '+npc.name+'?')){
+        player.spouse={id:npc.id,name:npc.name};
+        rel.type='spouse';
+        toast('Mariage avec '+npc.name+'!');
+        addQuest('family','Fonder une famille','Ayez un enfant.');
+      }
+    } else toast(npc.name+' - Relation: '+rel.level+'%');
+  }
+}
+
+function buyItem(id,qty){
+  const it=ITEMS[id];
+  if(!it) return;
+  const cost=it.price*qty*game.inflation;
+  if(player.cash<cost){toast('Fonds insuffisants');return;}
+  player.cash-=cost;
+  player.inventory[id]=(player.inventory[id]||0)+qty;
+  toast('Acheté: '+it.n+' x'+qty);
+}
+
+function eatItem(id){
+  const it=ITEMS[id];
+  if(!it||(player.inventory[id]||0)<1){toast('Pas en inventaire');return;}
+  player.inventory[id]--;
+  if(it.hunger) player.hunger=clamp(player.hunger+it.hunger,0,100);
+  if(it.thirst) player.thirst=clamp(player.thirst+it.thirst,0,100);
+  if(it.health) player.health=clamp(player.health+it.health,0,100);
+  toast('Consommé: '+it.n);
+}
+
+function doCraft(id){
+  const c=CRAFT.find(x=>x.id===id);
+  if(!c) return;
+  if(c.in) for(const[k,v]of Object.entries(c.in)){
+    if((player.inventory[k]||0)<v){toast('Ressources manquantes');return;}
+  }
+  if(c.in) for(const[k,v]of Object.entries(c.in)) player.inventory[k]-=v;
+  if(c.out) for(const[k,v]of Object.entries(c.out)) player.inventory[k]=(player.inventory[k]||0)+v;
+  if(c.skill) player.skills[c.skill]=clamp((player.skills[c.skill]||0)+1,0,100);
+  player.energy-=10;
+  completeMissionProgress('skill');
+  toast('Activité: '+c.n);
+}
+
+function buyProperty(type){
+  const prices={house:120000,apartment:80000,land:40000,shop:200000,farm:350000,factory:800000};
+  const p=prices[type];
+  if(!p) return;
+  const cost=Math.floor(p*game.inflation);
+  if(player.bank<cost){toast('Crédit insuffisant');return;}
+  player.bank-=cost;
+  player.properties.push({type,x:Math.floor(player.x),y:Math.floor(player.y),value:cost});
+  toast('Acheté: '+type+' ('+cost+'€)');
+  completeQuest('property');
+}
+
+function buyVehicle(id){
+  const v=VEHICLES.find(x=>x.id===id);
+  if(!v||v.cost===0) return;
+  if(player.cash+player.bank<v.cost){toast('Fonds insuffisants');return;}
+  if(player.vehicles.includes(id)){player.currentVehicle=id;toast('Véhicule sélectionné');return;}
+  player.bank-=v.cost;
+  player.vehicles.push(id);
+  player.currentVehicle=id;
+  toast('Acheté: '+v.n);
+}
+
+function takeLoan(amount){
+  player.loan+=amount;
+  player.bank+=amount;
+  toast('Prêt de '+amount+'€ accordé');
+}
+
+function investStock(sym,amt){
+  if(player.bank<amt){toast('Fonds insuffisants');return;}
+  player.bank-=amt;
+  player.stocks[sym]=(player.stocks[sym]||0)+amt;
+  toast('Investi '+amt+'€ en '+sym);
+}
+
+function sellStock(sym){
+  const amt=player.stocks[sym]||0;
+  if(!amt) return;
+  const val=Math.floor(amt*game.stockMarket[sym]/100);
+  player.bank+=val;
+  delete player.stocks[sym];
+  toast('Vendu pour '+val+'€');
+}
+
+function createCompany(){
+  if(player.company){toast('Vous avez déjà une entreprise');return;}
+  if(player.bank<10000){toast('10 000€ requis');return;}
+  player.bank-=10000;
+  player.company={name:'Entreprise '+player.name.split(' ')[0],revenue:0,level:1};
+  player.jobId='entrepreneur';
+  toast('Entreprise créée!');
+}
+
+function haveChild(){
+  if(!player.spouse||player.age<20){toast('Impossible');return;}
+  const child={name:pick(NAMES_M)+' '+player.name.split(' ')[1],age:0};
+  player.children.push(child);
+  player.happiness+=20;
+  completeQuest('family');
+  toast('Naissance: '+child.name);
+}
+
+function retire(){
+  if(player.age<60){toast('Retraite à partir de 60 ans');return;}
+  player.retired=true;
+  player.pension=Math.floor(getJob(player.jobId).sal*.6)||800;
+  player.jobId='unemployed';
+  toast('Retraite! Pension: '+player.pension+'€/mois');
+}
+
+function payPension(){
+  if(player.retired&&player.pension>0){
+    player.bank+=Math.floor(player.pension*game.inflation);
+  }
+}
+
+function grantDegree(deg){
+  if(!player.degrees.includes(deg)){
+    player.degrees.push(deg);
+    player.intelligence=clamp(player.intelligence+5,0,100);
+    completeQuest('degree');
+    toast('Diplôme obtenu: '+EDU_NAMES[deg]);
+  }
+}
+
+function startInvestigation(){
+  player.inTrial=true;
+  player.trialDays=3+ rnd(5);
+  toast('Enquête ouverte — Rendez-vous au tribunal');
+}
+
+function callAmbulance(){
+  if(player.health>40){toast('Pas d\'urgence médicale');return;}
+  ambulances.push({x:player.x+100,y:player.y,targetX:player.x,targetY:player.y,timer:200});
+  toast('Ambulance en route!');
+}
+
+function updateAmbulances(){
+  ambulances.forEach((a,i)=>{
+    const dx=a.targetX-a.x,dy=a.targetY-a.y;
+    const len=Math.hypot(dx,dy)||1;
+    a.x+=dx/len*4;a.y+=dy/len*4;
+    a.timer--;
+    if(len<30||a.timer<=0){
+      player.health=clamp(player.health+25,0,100);
+      player.diseases=player.diseases.filter(d=>d!=='injury');
+      ambulances.splice(i,1);
+      toast('Ambulance — Soins d\'urgence');
+    }
+  });
+}
+
+function sellProperty(idx){
+  const p=player.properties[idx];
+  if(!p) return;
+  const val=Math.floor(p.value*.85);
+  player.bank+=val;
+  player.properties.splice(idx,1);
+  toast('Vendu pour '+val+'€');
+}
+
+function commitCrime(id){
+  const c=CRIMES.find(x=>x.id===id);
+  if(!c) return;
+  if(rnd(100)<40){
+    player.criminalRecord.push(c.id);
+    player.jailDays=c.jail;
+    player.reputation-=20;
+    player.inTrial=true;
+    toast('Arrestation! '+c.n+' - Prison '+c.jail+' jours');
+  } else {
+    player.cash-=c.fine;
+    player.criminalRecord.push(c.id);
+    toast('Amende: '+c.fine+'€');
+  }
+}
+
+function renderHUD(){
+  const el=document.getElementById('hud');
+  const veh=getVehicle();
+  const job=getJob(player.jobId);
+  const season=['🌸 Printemps','☀️ Été','🍂 Automne','❄️ Hiver'][game.season];
+  const weather={clear:'☀️',cloudy:'☁️',rain:'🌧️',storm:'⛈️',heat:'🔥'}[game.weather]||'';
+  el.innerHTML=`
+  <div class="panel">
+    <h3>${player.name} · ${player.lifeStage} · ${player.age} ans</h3>
+    <div class="stat-row"><span>${season}</span><span>${weather} J${game.day} ${String(game.hour).padStart(2,'0')}:${String(game.minute).padStart(2,'0')}</span></div>
+    <div class="stat-row"><span>💵 ${Math.floor(player.cash)}€</span><span>🏦 ${Math.floor(player.bank)}€</span></div>
+    <div class="stat-row"><span>${job.n}</span><span>Niv.${player.jobLevel}</span></div>
+    <div class="stat-row"><span>${veh.n}</span><span>Réput. ${Math.floor(player.reputation)}</span></div>
+  </div>
+  <div class="panel">
+    <h3>Besoins</h3>
+    ${bar('Faim',player.hunger,'#e74')}
+    ${bar('Soif',player.thirst,'#4af')}
+    ${bar('Énergie',player.energy,'#4c4')}
+    ${bar('Sommeil',player.sleep,'#96c')}
+    ${bar('Santé',player.health,'#4e4')}
+    ${bar('Bonheur',player.happiness,'#fc4')}
+    ${bar('Stress',player.stress,'#a4a',true)}
+    ${bar('Hygiène',player.hygiene,'#8cf')}
+  </div>`;
+}
+
+function bar(label,val,color,invert){
+  const v=invert?100-val:val;
+  return `<div class="stat-row"><span>${label}</span><span>${Math.floor(val)}</span></div>
+  <div class="bar-wrap"><div class="bar-fill" style="width:${v}%;background:${color}"></div></div>`;
+}
+
+function refreshQuestUI(){
+  const el=document.getElementById('quest-list');
+  el.innerHTML=player.quests.filter(q=>!q.done).map(q=>
+    `<div class="quest-item">• ${q.title}</div>`).join('')||'<div class="quest-item">Aucune</div>';
+}
+
+function render(){
+  const w=canvas.width,h=canvas.height;
+  ctx.fillStyle='#0a0e14';
+  ctx.fillRect(0,0,w,h);
+  camera.x=player.x-w/2;
+  camera.y=player.y-h/2;
+  const t0=Math.floor(camera.x/TILE),t1=Math.floor(camera.y/TILE);
+  const tw=Math.ceil(w/TILE)+2,th=Math.ceil(h/TILE)+2;
+  for(let dy=0;dy<th;dy++){
+    for(let dx=0;dx<tw;dx++){
+      const tx=t0+dx,ty=t1+dy;
+      const tile=tileAt(tx,ty);
+      const biome=BIOMES[tile]||BIOMES[3];
+      let c=biome.c;
+      if(game.weather==='rain'||game.weather==='storm') c=shade(c,-15);
+      if(game.hour<6||game.hour>20) c=shade(c,-40);
+      else if(game.hour<8||game.hour>18) c=shade(c,-20);
+      if(game.season===3&&tile===3) c='#d0d8e8';
+      ctx.fillStyle=c;
+      ctx.fillRect(dx*TILE-camera.x%TILE,dy*TILE-camera.y%TILE,TILE,TILE);
+    }
+  }
+  worldBuildings.forEach(b=>{
+    const bx=b.x*TILE,by=b.y*TILE;
+    if(bx<camera.x-100||by<camera.y-100||bx>camera.x+w+100||by>camera.y+h+100) return;
+    const info=BUILDINGS[b.type]||{color:'#888',icon:''};
+    ctx.fillStyle=info.color;
+    ctx.fillRect(bx-camera.x,by-camera.y,b.w*TILE,b.h*TILE);
+    ctx.strokeStyle='#333';ctx.strokeRect(bx-camera.x,by-camera.y,b.w*TILE,b.h*TILE);
+    ctx.font='10px sans-serif';ctx.fillStyle='#000';
+    ctx.fillText(info.icon,bx-camera.x+2,by-camera.y+12);
+  });
+  animals.forEach(a=>{
+    if(a.x<camera.x-30||a.y<camera.y-30) return;
+    const icons={cow:'🐄',sheep:'🐑',chicken:'🐔',deer:'🦌',fish:'🐟'};
+    ctx.font='12px sans-serif';
+    ctx.fillText(icons[a.type]||'🐾',a.x-camera.x,a.y-camera.y);
+  });
+  ambulances.forEach(a=>{
+    ctx.fillStyle='#ff4444';
+    ctx.fillRect(a.x-camera.x-8,a.y-camera.y-4,16,8);
+    ctx.fillStyle='#fff';ctx.font='10px sans-serif';
+    ctx.fillText('🚑',a.x-camera.x-6,a.y-camera.y+4);
+  });
+  npcs.forEach(n=>{
+    if(n.x<camera.x-20||n.y<camera.y-20||n.x>camera.x+w+20||n.y>camera.y+h+20) return;
+    ctx.fillStyle=n.gender==='M'?'#5a8aff':'#ff8ab0';
+    ctx.beginPath();
+    ctx.arc(n.x-camera.x,n.y-camera.y,5,0,Math.PI*2);
+    ctx.fill();
+  });
+  const px=player.x-camera.x,py=player.y-camera.y;
+  const pSize=player.lifeStage==='baby'?4:player.lifeStage==='child'?6:8;
+  ctx.fillStyle=player.gender==='M'?'#2d8a4a':'#8a2d6a';
+  ctx.beginPath();ctx.arc(px,py,pSize,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+  if(player.jailDays>0){
+    ctx.fillStyle='rgba(0,0,0,.7)';
+    ctx.fillRect(0,0,w,h);
+    ctx.fillStyle='#fff';ctx.font='20px sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('PRISON - '+Math.ceil(player.jailDays)+' jours restants',w/2,h/2);
+    ctx.textAlign='left';
+  }
+  renderMinimap();
+}
+
+function shade(hex,amt){
+  let r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  r=clamp(r+amt,0,255);g=clamp(g+amt,0,255);b=clamp(b+amt,0,255);
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+
+function renderMinimap(){
+  const mw=160,mh=160;
+  const scaleX=mw/WORLD_W,scaleY=mh/WORLD_H;
+  mmCtx.fillStyle='#0a1020';
+  mmCtx.fillRect(0,0,mw,mh);
+  for(let y=0;y<WORLD_H;y+=8){
+    for(let x=0;x<WORLD_W;x+=8){
+      const t=worldTiles[y*WORLD_W+x];
+      mmCtx.fillStyle=(BIOMES[t]||BIOMES[3]).c;
+      mmCtx.fillRect(x*scaleX,y*scaleY,Math.ceil(8*scaleX),Math.ceil(8*scaleY));
+    }
+  }
+  mmCtx.fillStyle='#0f0';
+  mmCtx.fillRect(player.x/WORLD_W*mw-2,player.y/WORLD_H*mh-2,4,4);
+}
+
+function renderBigMap(){
+  if(!bigMapCtx) return;
+  const bw=500,bh=500;
+  for(let y=0;y<WORLD_H;y+=2){
+    for(let x=0;x<WORLD_W;x+=2){
+      const t=worldTiles[y*WORLD_W+x];
+      bigMapCtx.fillStyle=(BIOMES[t]||BIOMES[3]).c;
+      bigMapCtx.fillRect(x/WORLD_W*bw,y/WORLD_H*bh,3,3);
+    }
+  }
+  worldPOIs.forEach(p=>{
+    bigMapCtx.fillStyle='#ff0';
+    bigMapCtx.fillRect(p.x/WORLD_W/bw*bw-2,p.y/WORLD_H/bh*bh-2,4,4);
+  });
+  bigMapCtx.fillStyle='#0f0';
+  bigMapCtx.fillRect(player.x/WORLD_W*bw-3,player.y/WORLD_H*bh-3,6,6);
+}
+
+function renderCharacter(){
+  document.getElementById('char-content').innerHTML=`
+    <p><b>${player.name}</b> (${player.gender}) — ${player.age} ans, ${player.height} cm, ${player.weight.toFixed(1)} kg</p>
+    <p>Éducation: ${EDU_NAMES[player.edu]} | Diplômes: ${player.degrees.join(', ')||'aucun'}</p>
+    <p>Intelligence: ${Math.floor(player.intelligence)} | Force: ${Math.floor(player.strength)} | Charisme: ${Math.floor(player.charisma)}</p>
+    <p>Énergie ${Math.floor(player.energy)} | Santé ${Math.floor(player.health)} | Réputation ${Math.floor(player.reputation)}</p>
+    <p>Maladies: ${player.diseases.map(d=>DISEASES.find(x=>x.id===d)?.n||d).join(', ')||'aucune'}</p>
+    <p>Casier: ${player.criminalRecord.length} infraction(s) | Prison: ${Math.ceil(player.jailDays)} j</p>
+    ${player.spouse?'<p>Conjoint: '+player.spouse.name+'</p>':''}
+    ${player.children.length?'<p>Enfants: '+player.children.map(c=>c.name).join(', ')+'</p>':''}
+    <button class="btn-primary" onclick="gameActions.rest()">Se reposer</button>
+    <button class="btn-primary" onclick="gameActions.eat('meal')">Manger</button>
+    <button class="btn-primary" onclick="gameActions.eat('water')">Boire</button>
+    ${player.age>=60?'<button class="btn-primary" onclick="gameActions.retire()">Prendre retraite</button>':''}
+  `;
+}
+
+function renderJobs(){
+  const job=getJob(player.jobId);
+  let html=`<p>Emploi actuel: <b>${job.n}</b> — ${job.sal}€/mois — Niveau ${player.jobLevel} (XP ${player.jobXP})</p>`;
+  if(player.jobMissions.length){
+    html+='<p>Missions:</p><ul>';
+    player.jobMissions.forEach(m=>{html+=`<li>${m.desc}: ${m.progress}/${m.target} ${m.done?'✓':''}</li>`;});
+    html+='</ul>';
+  }
+  html+='<p>Changer de métier:</p><div class="modal-grid">';
+  JOBS.forEach(j=>{
+    if(j.id==='unemployed') return;
+    const err=canTakeJob(j);
+    html+=`<div class="card ${err?'disabled':''}" data-job="${j.id}" title="${err||''}">
+      <b>${j.n}</b><br>${j.sal}€/mois<br><small>${j.cat}</small></div>`;
+  });
+  html+=`</div><button class="btn-primary" id="btnWork">Travailler (shift)</button>
+  <button class="btn-primary" onclick="gameActions.quitJob()">Démissionner</button>`;
+  document.getElementById('job-content').innerHTML=html;
+  document.querySelectorAll('[data-job]').forEach(el=>{
+    el.onclick=()=>{
+      const j=getJob(el.dataset.job);
+      const err=canTakeJob(j);
+      if(err){toast(err);return;}
+      player.jobId=j.id;player.jobLevel=0;player.jobXP=0;
+      assignJobMissions();
+      completeQuest('job');
+      toast('Nouvel emploi: '+j.n);
+      renderJobs();
+    };
+  });
+  document.getElementById('btnWork').onclick=workShift;
+}
+
+function renderEconomy(){
+  document.getElementById('economy-content').innerHTML=`
+    <p>Inflation: ${(game.inflation*100-100).toFixed(1)}% | Indice économie: ${game.economyIndex}</p>
+    <p>Cash: ${Math.floor(player.cash)}€ | Banque: ${Math.floor(player.bank)}€</p>
+    <p>Prêt: ${Math.floor(player.loan)}€ | Dettes fiscales: ${Math.floor(player.taxDebt)}€</p>
+    <p>Bourse: TECH ${game.stockMarket.TECH} | HEALTH ${game.stockMarket.HEALTH} | ENERGY ${game.stockMarket.ENERGY} | BANK ${game.stockMarket.BANK}</p>
+    <label>Verser à la banque</label><input type="number" id="depAmt" value="100">
+    <button class="btn-primary" onclick="gameActions.deposit()">Déposer</button>
+    <button class="btn-primary" onclick="gameActions.withdraw()">Retirer</button>
+    <label>Prêt</label><input type="number" id="loanAmt" value="5000">
+    <button class="btn-primary" onclick="gameActions.loan()">Emprunter</button>
+    <label>Investir (symbole TECH/HEALTH/ENERGY/BANK)</label>
+    <input id="stockSym" value="TECH"><input type="number" id="stockAmt" value="500">
+    <button class="btn-primary" onclick="gameActions.buyStock()">Acheter actions</button>
+    <button class="btn-primary" onclick="gameActions.sellStock()">Vendre actions</button>
+    ${player.company?'<p>Entreprise: '+player.company.name+' (niv.'+player.company.level+')</p>':'<button class="btn-primary" onclick="gameActions.createCo()">Créer entreprise (10k€)</button>'}
+    <p>Maire élu: ${game.electedMayor}</p>
+  `;
+}
+
+function renderInventory(){
+  let html='<div class="modal-grid">';
+  for(const[id,qty]of Object.entries(player.inventory)){
+    if(!qty) continue;
+    const it=ITEMS[id];
+    html+=`<div class="card" data-use="${id}"><b>${it?it.n:id}</b> x${qty}</div>`;
+  }
+  html+='</div><p>Acheter:</p><div class="modal-grid">';
+  for(const[id,it]of Object.entries(ITEMS)){
+    html+=`<div class="card" data-buy="${id}">${it.n} — ${Math.floor(it.price*game.inflation)}€</div>`;
+  }
+  html+='</div>';
+  document.getElementById('inv-content').innerHTML=html;
+  document.querySelectorAll('[data-use]').forEach(el=>el.onclick=()=>eatItem(el.dataset.use));
+  document.querySelectorAll('[data-buy]').forEach(el=>el.onclick=()=>buyItem(el.dataset.buy,1));
+}
+
+function renderJustice(){
+  document.getElementById('justice-content').innerHTML=`
+    <p>Casier judiciaire: ${player.criminalRecord.length} infraction(s)</p>
+    <ul>${player.criminalRecord.map(id=>'<li>'+(CRIMES.find(c=>c.id===id)?.n||id)+'</li>').join('')||'<li>Vierge</li>'}</ul>
+    <p>Prison: ${Math.ceil(player.jailDays)} jour(s) | Procès: ${player.inTrial?'en cours':'non'}</p>
+    <div class="modal-grid">
+      ${CRIMES.map(c=>`<div class="card" onclick="commitCrime('${c.id}')"><b>${c.n}</b><br>Amende ${c.fine}€ · Prison ${c.jail}j</div>`).join('')}
+    </div>
+    <button class="btn-primary" onclick="startInvestigation()">Simuler enquête (RP)</button>
+    <button class="btn-primary" onclick="gameActions.clearRecord()">Réhabilitation (50k€)</button>
+  `;
+}
+
+function renderHealth(){
+  document.getElementById('health-content').innerHTML=`
+    <p>Santé: ${Math.floor(player.health)}% | Hygiène: ${Math.floor(player.hygiene)}%</p>
+    <p>Maladies actives:</p>
+    <ul>${player.diseases.map(d=>{
+      const dis=DISEASES.find(x=>x.id===d);
+      return '<li>'+(dis?dis.n:d)+' — traitement: '+(dis?.cure||'?')+'</li>';
+    }).join('')||'<li>Aucune</li>'}</ul>
+    <button class="btn-primary" onclick="callAmbulance()">Appeler ambulance</button>
+    <button class="btn-primary" onclick="gameActions.treatAll()">Traitement complet (100€)</button>
+    <button class="btn-primary" onclick="gameActions.hurt()">Simuler accident (test)</button>
+  `;
+}
+
+function renderProperty(){
+  document.getElementById('prop-content').innerHTML=`
+    <p>Propriétés possédées: ${player.properties.length}</p>
+    <ul>${player.properties.map((p,i)=>'<li>'+p.type+' — '+p.value+'€ <a href="#" onclick="sellProperty('+i+');renderProperty();return false">Vendre</a></li>').join('')||'<li>Aucune</li>'}</ul>
+    <div class="modal-grid">
+      <div class="card" onclick="buyProperty('house')">Maison — 120k€</div>
+      <div class="card" onclick="buyProperty('apartment')">Appartement — 80k€</div>
+      <div class="card" onclick="buyProperty('land')">Terrain — 40k€</div>
+      <div class="card" onclick="buyProperty('shop')">Commerce — 200k€</div>
+      <div class="card" onclick="buyProperty('farm')">Ferme — 350k€</div>
+      <div class="card" onclick="buyProperty('factory')">Usine — 800k€</div>
+    </div>
+    <button class="btn-primary" onclick="gameActions.addQuestProp()">Quête immobilier</button>
+  `;
+}
+
+function renderVehicles(){
+  let html='<div class="modal-grid">';
+  VEHICLES.forEach(v=>{
+    const owned=player.vehicles.includes(v.id);
+    html+=`<div class="card" onclick="buyVehicle('${v.id}')">${v.n} — ${v.cost}€ ${owned?'✓':''}</div>`;
+  });
+  html+='</div>';
+  document.getElementById('veh-content').innerHTML=html;
+}
+
+function renderSocial(){
+  document.getElementById('social-content').innerHTML=`
+    <p>Relations (${player.relations.length})</p>
+    <ul>${player.relations.map(r=>'<li>'+r.name+' — '+r.type+' ('+r.level+'%)</li>').join('')||'<li>Aucune — approchez des PNJ (touche E)</li>'}</ul>
+    ${player.spouse?'<p>Époux/se: '+player.spouse.name+'</p>':''}
+    <button class="btn-primary" onclick="gameActions.haveChild()">Avoir un enfant</button>
+    <p>PNJ proches: ${npcs.filter(n=>dist(player,n)<80).map(n=>n.name).slice(0,5).join(', ')||'aucun'}</p>
+  `;
+}
+
+function renderCraft(){
+  document.getElementById('craft-content').innerHTML=`
+    <div class="modal-grid">
+      ${CRAFT.map(c=>`<div class="card" onclick="doCraft('${c.id}')">${c.n}</div>`).join('')}
+    </div>
+    <p>Compétences:</p>
+    <ul>${Object.entries(player.skills).map(([k,v])=>'<li>'+k+': '+v+'</li>').join('')}</ul>
+    <button class="btn-primary" onclick="doCraft('fish')">Pêche (rivière/lac)</button>
+  `;
+}
+
+function renderQuests(){
+  document.getElementById('quests-content').innerHTML=`
+    <h3>Actives</h3>
+    ${player.quests.filter(q=>!q.done).map(q=>'<p>• '+q.title+': '+q.desc+'</p>').join('')||'<p>Aucune</p>'}
+    <h3>Terminées</h3>
+    <p>${player.completedQuests.length} quête(s)</p>
+    <button class="btn-primary" onclick="addQuest('explore','Explorer','Visitez 3 types de bâtiments.')">Nouvelle quête exploration</button>
+  `;
+}
+
+window.gameActions={
+  rest:()=>rest(4),
+  eat:id=>eatItem(id),
+  retire,
+  quitJob:()=>{player.jobId='unemployed';toast('Démission');renderJobs();},
+  deposit:()=>{const a=+document.getElementById('depAmt').value||0;if(player.cash>=a){player.cash-=a;player.bank+=a;toast('Déposé');renderEconomy();}},
+  withdraw:()=>{const a=+document.getElementById('depAmt').value||0;if(player.bank>=a){player.bank-=a;player.cash+=a;toast('Retiré');renderEconomy();}},
+  loan:()=>takeLoan(+document.getElementById('loanAmt').value||5000),
+  buyStock:()=>investStock(document.getElementById('stockSym').value||'TECH',+document.getElementById('stockAmt').value||500),
+  sellStock:()=>sellStock(document.getElementById('stockSym').value||'TECH'),
+  createCo,
+  haveChild,
+  addQuestProp:()=>addQuest('property','Propriétaire','Achetez un bien immobilier.'),
+  clearRecord:()=>{
+    if(player.bank<50000){toast('50 000€ en banque requis');return;}
+    player.bank-=50000;player.criminalRecord=[];player.jailDays=0;player.inTrial=false;
+    toast('Casier effacé');renderJustice();
+  },
+  treatAll:()=>{
+    if(player.cash<100){toast('100€ requis');return;}
+    player.cash-=100;player.health=100;player.diseases=[];
+    toast('Traité');renderHealth();
+  },
+  hurt:()=>{player.health-=30;player.diseases.push('injury');toast('Blessé');}
+};
+
+function saveGame(){
+  try{
+    const savePlayer={...player,exploredBuildings:[...player.exploredBuildings]};
+    localStorage.setItem(SAVE_KEY,JSON.stringify({player:savePlayer,game,npcs:npcs.slice(0,80),animals:animals.slice(0,40)}));
+    toast('Partie sauvegardée');
+  }catch(e){toast('Erreur sauvegarde');}
+}
+
+function loadGame(){
+  try{
+    const s=localStorage.getItem(SAVE_KEY);
+    if(!s) return false;
+    const d=JSON.parse(s);
+    player=d.player;game=d.game;
+    if(player.exploredBuildings&&!player.exploredBuildings.add)
+      player.exploredBuildings=new Set(player.exploredBuildings);
+    if(!player.exploredBuildings) player.exploredBuildings=new Set();
+    if(d.npcs) npcs=d.npcs;
+    if(d.animals) animals=d.animals;
+    return true;
+  }catch(e){return false;}
+}
+
+function loop(ts){
+  const dt=Math.min(ts-lastTime,50);
+  lastTime=ts;
+  if(!paused&&!modalOpen){
+    movePlayer(dt);
+    updateNeeds(dt);
+    updateTime(dt);
+  }
+  renderHUD();
+  render();
+  requestAnimationFrame(loop);
+}
+
+function init(){
+  canvas=document.getElementById('cvs');
+  ctx=canvas.getContext('2d');
+  const mm=document.getElementById('minimap');
+  mmCtx=mm.getContext('2d');
+  bigMapCtx=document.getElementById('bigMap').getContext('2d');
+  resize();
+  window.addEventListener('resize',resize);
+  genWorld();
+  camera={x:0,y:0};
+  const hadSave=loadGame();
+  if(!hadSave){createPlayer(true);}else{
+    if(!npcs||npcs.length<10) npcs=genNPCs(120);
+    if(!animals||!animals.length) spawnAnimals();
+    toast('Partie chargée');
+  }
+  if(!game) game={day:1,hour:8,minute:0,season:0,weather:'clear',weatherTimer:0,inflation:1,economyIndex:100,electionDay:365,electedMayor:'NPC',stockMarket:{TECH:100,HEALTH:100,ENERGY:100,BANK:100},events:[],timeScale:1};
+  refreshQuestUI();
+  document.addEventListener('keydown',e=>{
+    keys[e.key.toLowerCase()]=true;
+    if(e.key==='e'||e.key==='E') interact();
+    if(e.key===' ') {e.preventDefault();paused=!paused;toast(paused?'Pause':'Reprise');}
+    if(e.key==='m'||e.key==='M'){document.getElementById('modal-map').classList.add('show');renderBigMap();}
+    if(e.key>='1'&&e.key<='5'){
+      const acts=[()=>eatItem('bread'),()=>eatItem('water'),()=>workShift(),()=>rest(2),()=>doCraft('fish')];
+      acts[+e.key-1]();
+    }
+  });
+  document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+  document.querySelectorAll('[data-modal]').forEach(btn=>{
+    btn.onclick=()=>{
+      const id=btn.dataset.modal;
+      document.getElementById('modal-'+id).classList.add('show');
+      modalOpen=true;
+      ({character:renderCharacter,job:renderJobs,economy:renderEconomy,inventory:renderInventory,
+        property:renderProperty,vehicles:renderVehicles,social:renderSocial,craft:renderCraft,quests:renderQuests,
+        justice:renderJustice,health:renderHealth,map:renderBigMap})[id]?.();
+    };
+  });
+  document.querySelectorAll('.close').forEach(c=>c.onclick=()=>{
+    c.closest('.modal-overlay').classList.remove('show');
+    modalOpen=false;
+  });
+  document.getElementById('btnSave').onclick=saveGame;
+  document.getElementById('btnNew').onclick=()=>{
+    if(confirm('Nouvelle vie? La sauvegarde sera écrasée.')){
+      localStorage.removeItem(SAVE_KEY);
+      genWorld();createPlayer(true);
+    }
+  };
+  setInterval(saveGame,60000);
+  requestAnimationFrame(loop);
+}
+
+function resize(){
+  const area=document.getElementById('gameArea');
+  canvas.width=area.clientWidth;
+  canvas.height=area.clientHeight;
+}
+
+init();
+})();
+</script>
+</body>
+</html>
